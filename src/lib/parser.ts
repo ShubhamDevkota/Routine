@@ -24,7 +24,7 @@ export interface ApiResponse extends GroupRoutine {
 }
 
 const ROUTINE_URL =
-  "https://docse.netlify.app/sep_15b_2026_docse_cecsbit_i_with_room_fixed_routine_groups_days_vertical";
+  "https://docse.netlify.app/sep_15b_2026_docse_cecsbit_i_with_room_fixed_routine_groups_days_vertical#table_2";
 
 function normalizeTime(t: string): string {
   const parts = t.trim().split(":");
