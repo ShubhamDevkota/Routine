@@ -64,8 +64,19 @@ export default function AuthModal({
       return;
     }
 
-    const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, "");
-    const dummyEmail = `${cleanUsername || "student"}@docse.student`;
+    const rawInput = username.trim().toLowerCase();
+    let authEmail: string;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+
+    if (emailRegex.test(rawInput)) {
+      authEmail = rawInput;
+    } else {
+      // Strip domain/invalid chars and map safely to @docse.com (valid standard TLD)
+      const cleanLocal = rawInput.replace(/@.*$/, "").replace(/[^a-z0-9._-]/g, "") || "student";
+      authEmail = `${cleanLocal}@docse.com`;
+    }
+
+    const displayNameFromInput = fullName || rawInput.replace(/@.*$/, "") || "Student";
 
     try {
       if (mode === "guest") {
@@ -89,7 +100,7 @@ export default function AuthModal({
         }
       } else if (mode === "signin") {
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: dummyEmail,
+          email: authEmail,
           password,
         });
         if (error) throw error;
@@ -102,7 +113,7 @@ export default function AuthModal({
 
           const targetGroup = profile?.academic_group || academicGroup;
           const targetCourse = profile?.course || course;
-          const targetName = profile?.full_name || fullName || cleanUsername;
+          const targetName = profile?.full_name || displayNameFromInput;
 
           if (!profile) {
             await supabase.from("profiles").upsert({
@@ -124,12 +135,12 @@ export default function AuthModal({
         }
       } else if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({
-          email: dummyEmail,
+          email: authEmail,
           password,
           options: {
             data: {
-              full_name: fullName,
-              username: cleanUsername,
+              full_name: displayNameFromInput,
+              username: rawInput.replace(/@.*$/, ""),
               academic_group: academicGroup,
               course: course,
             },
@@ -141,14 +152,14 @@ export default function AuthModal({
             id: data.user.id,
             academic_group: academicGroup,
             course: course,
-            full_name: fullName || cleanUsername || "Student",
+            full_name: displayNameFromInput,
             updated_at: new Date().toISOString(),
           });
           onSuccess({
             userId: data.user.id,
             group: academicGroup,
             course: course,
-            name: fullName || cleanUsername || "Student",
+            name: displayNameFromInput,
           });
           onClose();
         }
@@ -325,13 +336,13 @@ export default function AuthModal({
               <div>
                 <label className="block text-xs font-medium text-zinc-700 mb-1 flex items-center gap-1.5">
                   <User className="w-3.5 h-3.5 text-zinc-500" />
-                  Username
+                  Username or Email
                 </label>
                 <input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="e.g. shubham or john_doe"
+                  placeholder="e.g. shubham, john, or you@example.com"
                   autoCapitalize="none"
                   autoCorrect="off"
                   className="w-full bg-white border border-zinc-300 rounded-lg px-3 py-2 text-xs text-zinc-900 focus:ring-1 focus:ring-zinc-900 focus:outline-none"
