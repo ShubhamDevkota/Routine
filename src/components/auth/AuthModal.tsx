@@ -134,75 +134,87 @@ export default function AuthModal({
           onClose();
         }
       } else if (mode === "signup") {
-        const { data, error } = await supabase.auth.signUp({
-          email: authEmail,
-          password,
-          options: {
-            data: {
-              full_name: displayNameFromInput,
-              username: rawInput.replace(/@.*$/, ""),
-              academic_group: academicGroup,
-              course: course,
-            },
-          },
-        });
-
-        // If user is already registered or identities is empty (Supabase security feature)
-        if (error?.message?.toLowerCase().includes("already registered") || (data?.user && data.user.identities && data.user.identities.length === 0)) {
-          const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
-            email: authEmail,
-            password,
-          });
-          if (signInErr) throw new Error("Account already exists with this username/email. Please switch to Sign In or check your password.");
-          if (signInData.user) {
-            onSuccess({
-              userId: signInData.user.id,
-              group: academicGroup,
-              course: course,
-              name: displayNameFromInput,
-            });
-            onClose();
-            return;
-          }
-        }
-
-        if (error) {
-          if (error.message.toLowerCase().includes("rate limit") || error.message.toLowerCase().includes("over_email_send_rate_limit")) {
-            // Try signing in directly in case the user was already created
-            const { data: signInData } = await supabase.auth.signInWithPassword({
+        // 1. Call server API to create pre-confirmed user (bypasses email sending & rate limits)
+        let serverCreated = false;
+        try {
+          const res = await fetch("/api/auth/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
               email: authEmail,
               password,
-            });
-            if (signInData?.user) {
-              onSuccess({
-                userId: signInData.user.id,
-                group: academicGroup,
-                course: course,
-                name: displayNameFromInput,
-              });
-              onClose();
-              return;
-            }
-            throw new Error("Supabase email rate limit reached. Please disable 'Confirm Email' in your Supabase Auth Settings (see guide below) or sign in if you already created this account.");
+              fullName: displayNameFromInput,
+              username: rawInput.replace(/@.*$/, ""),
+              academicGroup,
+              course,
+            }),
+          });
+          const resData = await res.json();
+          if (res.ok && resData.success) {
+            serverCreated = true;
           }
-          throw error;
+        } catch {
+          // Server endpoint fallback
         }
 
-        if (data.user) {
+        // 2. Sign in with the created credentials
+        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password,
+        });
+
+        if (!signInErr && signInData.user) {
           await supabase.from("profiles").upsert({
-            id: data.user.id,
+            id: signInData.user.id,
             academic_group: academicGroup,
             course: course,
             full_name: displayNameFromInput,
             updated_at: new Date().toISOString(),
           });
           onSuccess({
-            userId: data.user.id,
+            userId: signInData.user.id,
             group: academicGroup,
             course: course,
             name: displayNameFromInput,
           });
           onClose();
+          return;
+        }
+
+        // 3. If direct signin didn't work and server couldn't create, fallback to client signUp
+        if (!serverCreated) {
+          const { data, error } = await supabase.auth.signUp({
+            email: authEmail,
+            password,
+            options: {
+              data: {
+                full_name: displayNameFromInput,
+                username: rawInput.replace(/@.*$/, ""),
+                academic_group: academicGroup,
+                course: course,
+              },
+            },
+          });
+
+          if (error) throw error;
+          if (data.user) {
+            await supabase.from("profiles").upsert({
+              id: data.user.id,
+              academic_group: academicGroup,
+              course: course,
+              full_name: displayNameFromInput,
+              updated_at: new Date().toISOString(),
+            });
+            onSuccess({
+              userId: data.user.id,
+              group: academicGroup,
+              course: course,
+              name: displayNameFromInput,
+            });
+            onClose();
+          }
+        } else if (signInErr) {
+          throw signInErr;
         }
       }
     } catch (err: unknown) {
