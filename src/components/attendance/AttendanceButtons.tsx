@@ -27,6 +27,7 @@ export default function AttendanceButtons({
     initialStatus
   );
   const [, setLoading] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     setStatus(initialStatus);
@@ -37,6 +38,7 @@ export default function AttendanceButtons({
     const instanceKey = classInstanceId || `instance_${subjectName}_${classDate || ""}`;
 
     setStatus(newStatus);
+    setSyncError(null);
     if (onStatusChange) onStatusChange(newStatus);
 
     // Save to local storage for offline / local support
@@ -58,7 +60,7 @@ export default function AttendanceButtons({
     ) {
       try {
         setLoading(true);
-        await supabase.from("attendance_records").upsert(
+        const { error } = await supabase.from("attendance_records").upsert(
           {
             user_id: userId,
             class_instance_id: instanceKey,
@@ -67,8 +69,14 @@ export default function AttendanceButtons({
           },
           { onConflict: "user_id,class_instance_id" }
         );
+        if (error) {
+          console.error("Supabase attendance write failed:", error.message, error.code);
+          setSyncError(`Sync failed: ${error.message}`);
+        }
       } catch (err) {
-        console.debug("Supabase attendance write offline:", err);
+        const msg = err instanceof Error ? err.message : "Network error";
+        console.error("Supabase attendance write error:", msg);
+        setSyncError(`Offline: ${msg}`);
       } finally {
         setLoading(false);
       }
@@ -76,48 +84,55 @@ export default function AttendanceButtons({
   };
 
   return (
-    <div className="inline-flex items-center gap-1 p-1 bg-zinc-100/90 rounded-lg border border-zinc-200 text-xs">
-      <button
-        type="button"
-        onClick={() => handleSelect("present")}
-        title="Mark Present"
-        className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-all ${
-          status === "present"
-            ? "bg-emerald-600 text-white shadow-xs font-semibold"
-            : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60"
-        }`}
-      >
-        <Check className="w-3.5 h-3.5" />
-        <span>Present</span>
-      </button>
+    <div className="flex flex-col gap-1">
+      <div className="inline-flex items-center gap-1 p-1 bg-zinc-100/90 rounded-lg border border-zinc-200 text-xs">
+        <button
+          type="button"
+          onClick={() => handleSelect("present")}
+          title="Mark Present"
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-all ${
+            status === "present"
+              ? "bg-emerald-600 text-white shadow-xs font-semibold"
+              : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60"
+          }`}
+        >
+          <Check className="w-3.5 h-3.5" />
+          <span>Present</span>
+        </button>
 
-      <button
-        type="button"
-        onClick={() => handleSelect("absent")}
-        title="Mark Absent"
-        className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-all ${
-          status === "absent"
-            ? "bg-rose-600 text-white shadow-xs font-semibold"
-            : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60"
-        }`}
-      >
-        <X className="w-3.5 h-3.5" />
-        <span>Absent</span>
-      </button>
+        <button
+          type="button"
+          onClick={() => handleSelect("absent")}
+          title="Mark Absent"
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-all ${
+            status === "absent"
+              ? "bg-rose-600 text-white shadow-xs font-semibold"
+              : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60"
+          }`}
+        >
+          <X className="w-3.5 h-3.5" />
+          <span>Absent</span>
+        </button>
 
-      <button
-        type="button"
-        onClick={() => handleSelect("excused")}
-        title="Mark Excused"
-        className={`flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-all ${
-          status === "excused"
-            ? "bg-amber-600 text-white shadow-xs font-semibold"
-            : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60"
-        }`}
-      >
-        <ShieldAlert className="w-3.5 h-3.5" />
-        <span>Excused</span>
-      </button>
+        <button
+          type="button"
+          onClick={() => handleSelect("excused")}
+          title="Mark Excused"
+          className={`flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-all ${
+            status === "excused"
+              ? "bg-amber-600 text-white shadow-xs font-semibold"
+              : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60"
+          }`}
+        >
+          <ShieldAlert className="w-3.5 h-3.5" />
+          <span>Excused</span>
+        </button>
+      </div>
+      {syncError && (
+        <div className="text-[10px] text-rose-600 font-medium px-1" title={syncError}>
+          ⚠ Saved locally only (cloud sync failed)
+        </div>
+      )}
     </div>
   );
 }

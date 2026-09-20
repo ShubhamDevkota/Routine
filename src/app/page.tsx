@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { Profile } from "@/types/database";
 import {
@@ -8,6 +8,7 @@ import {
   getHolidays,
   setHolidayStatus,
 } from "@/lib/attendance";
+import { migrateLocalDataToSupabase } from "@/lib/migrate-local-data";
 import AuthModal from "@/components/auth/AuthModal";
 import UserProfileMenu from "@/components/auth/UserProfileMenu";
 import AttendanceWidget from "@/components/attendance/AttendanceWidget";
@@ -1036,7 +1037,15 @@ export default function SchedulePage() {
         onClose={() => setIsAuthModalOpen(false)}
         availableGroups={groups}
         currentGroup={selectedGroup}
-        onSuccess={(data) => {
+        onSuccess={async (data) => {
+          // CRITICAL: Set currentUser immediately with the real Supabase user ID
+          // so all downstream components use the correct ID for data operations
+          const isRealUser = data.userId && data.userId !== "guest" && !data.userId.startsWith("local-");
+          setCurrentUser({
+            id: data.userId,
+            email: data.name || undefined,
+            isAnonymous: !isRealUser,
+          });
           setSelectedGroup(data.group);
           setUserProfile({
             id: data.userId,
@@ -1045,6 +1054,22 @@ export default function SchedulePage() {
             full_name: data.name || null,
           });
           setAttendanceRefreshKey((k) => k + 1);
+
+          // Migrate local/guest data to Supabase for real authenticated users
+          if (isRealUser) {
+            try {
+              const migrationResult = await migrateLocalDataToSupabase(data.userId);
+              if (migrationResult.attendanceMigrated > 0 || migrationResult.notesMigrated > 0) {
+                // Refresh attendance display after migration
+                setAttendanceRefreshKey((k) => k + 1);
+              }
+              if (migrationResult.errors.length > 0) {
+                console.warn("Some local data failed to migrate:", migrationResult.errors);
+              }
+            } catch (err) {
+              console.error("Local data migration failed:", err);
+            }
+          }
         }}
       />
 

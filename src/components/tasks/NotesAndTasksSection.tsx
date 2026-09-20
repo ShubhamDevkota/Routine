@@ -50,8 +50,25 @@ export default function NotesAndTasksSection({
       return;
     }
 
+    const isRealUser = userId !== "guest" && !userId.startsWith("local-");
     let isMounted = true;
+
     async function loadTasks() {
+      // For guest/local users, only use localStorage
+      if (!isRealUser) {
+        if (typeof window !== "undefined") {
+          const raw = localStorage.getItem(`docse_tasks_${userId}`);
+          if (raw && isMounted) {
+            try {
+              setItems(JSON.parse(raw));
+            } catch {}
+          }
+        }
+        setLoading(false);
+        return;
+      }
+
+      // For real Supabase users, fetch from Supabase
       try {
         setLoading(true);
         const { data, error } = await supabase
@@ -61,6 +78,10 @@ export default function NotesAndTasksSection({
           .order("is_completed", { ascending: true })
           .order("created_at", { ascending: false });
 
+        if (error) {
+          console.error("Supabase notes fetch error:", error.message, error.code);
+        }
+
         if (!error && data && data.length > 0 && isMounted) {
           setItems(data);
           if (typeof window !== "undefined") {
@@ -68,20 +89,31 @@ export default function NotesAndTasksSection({
           }
           return;
         }
+
+        // If Supabase returned empty or had an error, try localStorage cache
+        if (isMounted && (!data || data.length === 0)) {
+          if (typeof window !== "undefined") {
+            const raw = localStorage.getItem(`docse_tasks_${userId}`);
+            if (raw) {
+              try {
+                setItems(JSON.parse(raw));
+              } catch {}
+            }
+          }
+        }
       } catch (err) {
-        console.debug("Supabase tasks offline, checking local storage");
+        console.error("Supabase tasks fetch failed:", err);
+        // Local storage fallback
+        if (typeof window !== "undefined") {
+          const raw = localStorage.getItem(`docse_tasks_${userId}`);
+          if (raw && isMounted) {
+            try {
+              setItems(JSON.parse(raw));
+            } catch {}
+          }
+        }
       } finally {
         if (isMounted) setLoading(false);
-      }
-
-      // Local storage fallback
-      if (typeof window !== "undefined") {
-        const raw = localStorage.getItem(`docse_tasks_${userId}`);
-        if (raw && isMounted) {
-          try {
-            setItems(JSON.parse(raw));
-          } catch {}
-        }
       }
     }
 
@@ -91,6 +123,8 @@ export default function NotesAndTasksSection({
       isMounted = false;
     };
   }, [userId]);
+
+  const isRealUser = userId ? (userId !== "guest" && !userId.startsWith("local-")) : false;
 
   const handleToggleComplete = async (item: NoteAndTask) => {
     const updated = !item.is_completed;
@@ -103,13 +137,18 @@ export default function NotesAndTasksSection({
       localStorage.setItem(`docse_tasks_${userId}`, JSON.stringify(newItems));
     }
 
-    try {
-      await supabase
-        .from("notes_and_tasks")
-        .update({ is_completed: updated, updated_at: new Date().toISOString() })
-        .eq("id", item.id);
-    } catch (err) {
-      console.debug("Remote task toggle offline");
+    if (isRealUser) {
+      try {
+        const { error } = await supabase
+          .from("notes_and_tasks")
+          .update({ is_completed: updated, updated_at: new Date().toISOString() })
+          .eq("id", item.id);
+        if (error) {
+          console.error("Supabase task toggle error:", error.message);
+        }
+      } catch (err) {
+        console.error("Remote task toggle failed:", err);
+      }
     }
   };
 
@@ -119,10 +158,15 @@ export default function NotesAndTasksSection({
     if (typeof window !== "undefined" && userId) {
       localStorage.setItem(`docse_tasks_${userId}`, JSON.stringify(newItems));
     }
-    try {
-      await supabase.from("notes_and_tasks").delete().eq("id", id);
-    } catch (err) {
-      console.debug("Remote task delete offline");
+    if (isRealUser) {
+      try {
+        const { error } = await supabase.from("notes_and_tasks").delete().eq("id", id);
+        if (error) {
+          console.error("Supabase task delete error:", error.message);
+        }
+      } catch (err) {
+        console.error("Remote task delete failed:", err);
+      }
     }
   };
 
@@ -156,26 +200,30 @@ export default function NotesAndTasksSection({
     setIsAdding(false);
 
     try {
-      const { data, error } = await supabase
-        .from("notes_and_tasks")
-        .insert({
-          user_id: userId,
-          academic_group: academicGroup || null,
-          title: newItem.title,
-          description: newItem.description,
-          type: newItem.type,
-          subject_name: newItem.subject_name,
-          due_date: newItem.due_date,
-          is_completed: false,
-        })
-        .select()
-        .single();
+      if (isRealUser) {
+        const { data, error } = await supabase
+          .from("notes_and_tasks")
+          .insert({
+            user_id: userId,
+            academic_group: academicGroup || null,
+            title: newItem.title,
+            description: newItem.description,
+            type: newItem.type,
+            subject_name: newItem.subject_name,
+            due_date: newItem.due_date,
+            is_completed: false,
+          })
+          .select()
+          .single();
 
-      if (!error && data) {
-        setItems((prev) => prev.map((t) => (t.id === fallbackId ? data : t)));
+        if (error) {
+          console.error("Supabase note creation error:", error.message);
+        } else if (data) {
+          setItems((prev) => prev.map((t) => (t.id === fallbackId ? data : t)));
+        }
       }
     } catch (err) {
-      console.debug("Remote task creation offline");
+      console.error("Remote task creation failed:", err);
     }
   };
 
