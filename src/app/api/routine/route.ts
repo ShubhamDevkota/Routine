@@ -6,9 +6,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const requestedGroup = searchParams.get("group");
+    const requestedGroup = searchParams.get("group") || undefined;
 
-    const { allRoutines, groups } = await fetchAndParseAllRoutines();
+    const { allRoutines, groups } = await fetchAndParseAllRoutines(requestedGroup);
 
     const targetGroup =
       requestedGroup && allRoutines.has(requestedGroup)
@@ -23,8 +23,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         {
           error: "No routine data found",
-          groups: [],
-          group: "",
+          groups: groups,
+          group: targetGroup,
           schedule: [],
         },
         { status: 404 }
