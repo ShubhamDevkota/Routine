@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
     const supabase = getAdminSupabase();
 
     let targetInstanceId = classInstanceId;
+    let scheduleId: string | null = null;
     const isUuid =
       typeof targetInstanceId === "string" &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -40,8 +41,7 @@ export async function POST(req: NextRequest) {
       const targetDate = classDate || new Date().toISOString().split("T")[0];
 
       // 1. Find or create schedule
-      let scheduleId: string | null = null;
-      const { data: scheds } = await supabase
+      const { data: scheds, error: schedFetchErr } = await supabase
         .from("class_schedules")
         .select("id")
         .eq("academic_group", targetGroup)
@@ -49,6 +49,10 @@ export async function POST(req: NextRequest) {
         .eq("start_time", targetStart)
         .eq("room", targetRoom)
         .limit(1);
+
+      if (schedFetchErr) {
+        console.error("Attendance API schedule fetch error:", schedFetchErr);
+      }
 
       if (scheds && scheds.length > 0) {
         scheduleId = scheds[0].id;
@@ -69,6 +73,10 @@ export async function POST(req: NextRequest) {
           .select("id")
           .single();
 
+        if (schedErr) {
+          console.error("Attendance API schedule upsert error:", schedErr);
+        }
+
         if (!schedErr && newSched?.id) {
           scheduleId = newSched.id;
         }
@@ -76,17 +84,21 @@ export async function POST(req: NextRequest) {
 
       // 2. Find or create class instance
       if (scheduleId) {
-        const { data: insts } = await supabase
+        const { data: insts, error: instFetchErr } = await supabase
           .from("class_instances")
           .select("id")
           .eq("schedule_id", scheduleId)
           .eq("class_date", targetDate)
           .limit(1);
 
+        if (instFetchErr) {
+          console.error("Attendance API instance fetch error:", instFetchErr);
+        }
+
         if (insts && insts.length > 0) {
           targetInstanceId = insts[0].id;
         } else {
-          const { data: newInst } = await supabase
+          const { data: newInst, error: instInsertErr } = await supabase
             .from("class_instances")
             .insert({
               schedule_id: scheduleId,
@@ -95,6 +107,10 @@ export async function POST(req: NextRequest) {
             })
             .select("id")
             .single();
+
+          if (instInsertErr) {
+            console.error("Attendance API instance insert error:", instInsertErr);
+          }
 
           if (newInst?.id) {
             targetInstanceId = newInst.id;
@@ -105,7 +121,11 @@ export async function POST(req: NextRequest) {
 
     if (!targetInstanceId) {
       return NextResponse.json(
-        { error: "Could not resolve or create class instance" },
+        {
+          error: "Could not resolve or create class instance",
+          scheduleId,
+          targetInstanceId,
+        },
         { status: 400 }
       );
     }
