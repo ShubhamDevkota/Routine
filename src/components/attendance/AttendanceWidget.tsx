@@ -30,7 +30,7 @@ export default function AttendanceWidget({
 }: AttendanceWidgetProps) {
   const [stats, setStats] = useState<SubjectAttendanceStat[]>([]);
   const [loading, setLoading] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -71,7 +71,11 @@ export default function AttendanceWidget({
   return (
     <section className="bg-white border border-zinc-200 rounded-2xl p-5 mb-6 shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-all">
       {/* Header Bar */}
-      <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+      <div
+        className={`flex items-center justify-between ${
+          isExpanded ? "pb-3 border-b border-zinc-100" : ""
+        }`}
+      >
         <div className="flex items-center gap-2.5">
           <div
             className={`p-2 rounded-xl text-white ${
