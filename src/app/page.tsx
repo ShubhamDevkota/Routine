@@ -978,16 +978,27 @@ export default function SchedulePage() {
                                 {/* Interactive Attendance Controls */}
                                 <AttendanceButtons
                                   userId={currentUser?.id || null}
+                                  academicGroup={selectedGroup}
+                                  dayOfWeek={daySchedule.day}
+                                  startTime={slot.startTime}
+                                  room={slot.room}
                                   classInstanceId={instanceId}
                                   classDate={selectedDate}
                                   subjectName={slot.subject}
                                   initialStatus={currentAttendanceStatus}
-                                  onStatusChange={(newStatus) => {
-                                    if (instanceId) {
+                                  onStatusChange={(newStatus, resolvedInstanceId) => {
+                                    const effectiveId = resolvedInstanceId || instanceId;
+                                    if (effectiveId) {
                                       setAttendanceMap((prev) => ({
                                         ...prev,
-                                        [instanceId]: newStatus,
+                                        [effectiveId]: newStatus,
                                       }));
+                                      if (resolvedInstanceId && resolvedInstanceId !== instanceId) {
+                                        setInstanceIds((prev) => ({
+                                          ...prev,
+                                          [slotKey]: resolvedInstanceId,
+                                        }));
+                                      }
                                       setAttendanceRefreshKey((k) => k + 1);
                                     }
                                   }}

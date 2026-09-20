@@ -7,16 +7,24 @@ import { saveLocalAttendanceRecord } from "@/lib/attendance";
 
 interface AttendanceButtonsProps {
   userId: string | null;
+  academicGroup?: string;
+  dayOfWeek?: string;
+  startTime?: string;
+  room?: string;
   classInstanceId: string | null;
   classDate?: string;
   subjectName?: string;
   initialStatus?: "present" | "absent" | "excused" | null;
-  onStatusChange?: (status: "present" | "absent" | "excused") => void;
+  onStatusChange?: (status: "present" | "absent" | "excused", resolvedInstanceId?: string) => void;
   onRequireAuth?: () => void;
 }
 
 export default function AttendanceButtons({
   userId,
+  academicGroup,
+  dayOfWeek,
+  startTime,
+  room,
   classInstanceId,
   classDate,
   subjectName = "General",
@@ -39,7 +47,7 @@ export default function AttendanceButtons({
 
     setStatus(newStatus);
     setSyncError(null);
-    if (onStatusChange) onStatusChange(newStatus);
+    if (onStatusChange) onStatusChange(newStatus, classInstanceId || undefined);
 
     // Save to local storage for offline / local support
     saveLocalAttendanceRecord(
@@ -50,33 +58,44 @@ export default function AttendanceButtons({
       classDate
     );
 
-    // If logged in with real Supabase user, attempt remote write
+    // If logged in with real Supabase user, sync via server API route
     if (
       userId &&
       userId !== "guest" &&
-      !userId.startsWith("local-") &&
-      process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("YOUR_SUPABASE_PROJECT_ID")
+      !userId.startsWith("local-")
     ) {
       try {
         setLoading(true);
-        const { error } = await supabase.from("attendance_records").upsert(
-          {
-            user_id: userId,
-            class_instance_id: instanceKey,
+        const res = await fetch("/api/attendance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            academicGroup,
+            dayOfWeek,
+            startTime,
+            room,
+            classDate,
+            subjectName,
             status: newStatus,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id,class_instance_id" }
-        );
-        if (error) {
-          console.error("Supabase attendance write failed:", error.message, error.code);
-          setSyncError(`Sync failed: ${error.message}`);
+            classInstanceId,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          throw new Error(data.error || "Failed to sync attendance");
+        }
+
+        // Successfully synced to cloud
+        setSyncError(null);
+        if (data.class_instance_id && onStatusChange) {
+          onStatusChange(newStatus, data.class_instance_id);
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Network error";
         console.error("Supabase attendance write error:", msg);
-        setSyncError(`Offline: ${msg}`);
+        setSyncError(`Sync error: ${msg}`);
       } finally {
         setLoading(false);
       }
