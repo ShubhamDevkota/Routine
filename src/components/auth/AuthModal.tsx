@@ -146,7 +146,48 @@ export default function AuthModal({
             },
           },
         });
-        if (error) throw error;
+
+        // If user is already registered or identities is empty (Supabase security feature)
+        if (error?.message?.toLowerCase().includes("already registered") || (data?.user && data.user.identities && data.user.identities.length === 0)) {
+          const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+            email: authEmail,
+            password,
+          });
+          if (signInErr) throw new Error("Account already exists with this username/email. Please switch to Sign In or check your password.");
+          if (signInData.user) {
+            onSuccess({
+              userId: signInData.user.id,
+              group: academicGroup,
+              course: course,
+              name: displayNameFromInput,
+            });
+            onClose();
+            return;
+          }
+        }
+
+        if (error) {
+          if (error.message.toLowerCase().includes("rate limit") || error.message.toLowerCase().includes("over_email_send_rate_limit")) {
+            // Try signing in directly in case the user was already created
+            const { data: signInData } = await supabase.auth.signInWithPassword({
+              email: authEmail,
+              password,
+            });
+            if (signInData?.user) {
+              onSuccess({
+                userId: signInData.user.id,
+                group: academicGroup,
+                course: course,
+                name: displayNameFromInput,
+              });
+              onClose();
+              return;
+            }
+            throw new Error("Supabase email rate limit reached. Please disable 'Confirm Email' in your Supabase Auth Settings (see guide below) or sign in if you already created this account.");
+          }
+          throw error;
+        }
+
         if (data.user) {
           await supabase.from("profiles").upsert({
             id: data.user.id,
@@ -169,6 +210,8 @@ export default function AuthModal({
       const message = err instanceof Error ? err.message : "Authentication failed";
       if (message.includes("Failed to fetch") || message.includes("NetworkError")) {
         setErrorMsg("Supabase connection offline. You can click below to continue in Local Offline Mode.");
+      } else if (message.toLowerCase().includes("invalid login credentials")) {
+        setErrorMsg("Incorrect username or password. If you haven't created this account yet, please use the Sign Up tab.");
       } else {
         setErrorMsg(message);
       }
