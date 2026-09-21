@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAndParseAllRoutines } from "@/lib/parser";
-import { syncRoutinesToSupabase } from "@/lib/supabase/sync-routine";
 
 export const dynamic = "force-dynamic";
 
@@ -10,11 +9,6 @@ export async function GET(request: NextRequest) {
     const requestedGroup = searchParams.get("group") || undefined;
 
     const { allRoutines, groups } = await fetchAndParseAllRoutines(requestedGroup);
-
-    // Trigger Supabase persistence in the background
-    syncRoutinesToSupabase(allRoutines).catch((err) =>
-      console.warn("Background routine DB sync error:", err)
-    );
 
     const targetGroup =
       requestedGroup && allRoutines.has(requestedGroup)
